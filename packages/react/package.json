@@ -1,0 +1,92 @@
+{
+  "name": "@better-activity/react",
+  "version": "0.1.0",
+  "description": "React hooks and headless components for better-activity.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./components": {
+      "types": "./dist/components.d.ts",
+      "import": "./dist/components.js"
+    },
+    "./formatters": {
+      "types": "./dist/formatters.d.ts",
+      "import": "./dist/formatters.js"
+    },
+    "./tanstack": {
+      "types": "./dist/tanstack.d.ts",
+      "import": "./dist/tanstack.js"
+    },
+    "./swr": {
+      "types": "./dist/swr.d.ts",
+      "import": "./dist/swr.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/better-activity/better-activity.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/better-activity/better-activity/tree/main/packages/react#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm build && pnpm check-types"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": ">=5",
+    "better-activity": ">=0.1.0",
+    "react": ">=18",
+    "swr": ">=2"
+  },
+  "peerDependenciesMeta": {
+    "@tanstack/react-query": { "optional": true },
+    "swr": { "optional": true }
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.64.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^20.12.0",
+    "@types/react": "^18.3.10",
+    "@types/react-dom": "^18.3.0",
+    "better-activity": "link:../better-activity",
+    "jsdom": "^25.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "swr": "^2.2.5",
+    "tsup": "^8.3.0",
+    "typescript": "5.9.2",
+    "vitest": "^2.1.4"
+  },
+  "keywords": [
+    "react",
+    "hooks",
+    "activity",
+    "audit",
+    "audit-log",
+    "headless",
+    "better-activity"
+  ]
+}

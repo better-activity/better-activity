@@ -1,0 +1,12 @@
+packages:
+  - "packages/*"
+  - docs
+
+allowBuilds:
+  better-sqlite3: false
+  esbuild: false
+
+catalog:
+  kysely: ^0.28.17
+  tsdown: 0.21.1
+  typescript: ^5.9.3

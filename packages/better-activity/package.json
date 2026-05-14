@@ -1,0 +1,132 @@
+{
+  "name": "better-activity",
+  "version": "0.1.0",
+  "description": "A fully-typed activity / audit log library for TypeScript.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "better-activity": "./dist/cli/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./adapters/memory": {
+      "types": "./dist/adapters/memory.d.ts",
+      "import": "./dist/adapters/memory.js",
+      "require": "./dist/adapters/memory.cjs"
+    },
+    "./adapters/postgres": {
+      "types": "./dist/adapters/postgres.d.ts",
+      "import": "./dist/adapters/postgres.js",
+      "require": "./dist/adapters/postgres.cjs"
+    },
+    "./adapters/mysql": {
+      "types": "./dist/adapters/mysql.d.ts",
+      "import": "./dist/adapters/mysql.js",
+      "require": "./dist/adapters/mysql.cjs"
+    },
+    "./adapters/sqlite": {
+      "types": "./dist/adapters/sqlite.d.ts",
+      "import": "./dist/adapters/sqlite.js",
+      "require": "./dist/adapters/sqlite.cjs"
+    },
+    "./adapters/mongodb": {
+      "types": "./dist/adapters/mongodb.d.ts",
+      "import": "./dist/adapters/mongodb.js",
+      "require": "./dist/adapters/mongodb.cjs"
+    },
+    "./adapters/drizzle": {
+      "types": "./dist/adapters/drizzle.d.ts",
+      "import": "./dist/adapters/drizzle.js",
+      "require": "./dist/adapters/drizzle.cjs"
+    },
+    "./adapters/prisma": {
+      "types": "./dist/adapters/prisma.d.ts",
+      "import": "./dist/adapters/prisma.js",
+      "require": "./dist/adapters/prisma.cjs"
+    },
+    "./adapters/kysely": {
+      "types": "./dist/adapters/kysely.d.ts",
+      "import": "./dist/adapters/kysely.js",
+      "require": "./dist/adapters/kysely.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/better-activity/better-activity.git",
+    "directory": "packages/better-activity"
+  },
+  "homepage": "https://github.com/better-activity/better-activity#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm build && pnpm check-types"
+  },
+  "keywords": [
+    "activity",
+    "audit",
+    "audit-log",
+    "event",
+    "event-log",
+    "tracking",
+    "history",
+    "typescript"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@types/pg": "^8.11.6",
+    "@vitest/coverage-v8": "2.1.9",
+    "tsup": "^8.3.0",
+    "typescript": "5.9.2",
+    "vitest": "^2.1.4"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.0.0 || ^6.0.0 || ^7.0.0",
+    "better-sqlite3": "^12.0.0",
+    "drizzle-orm": "^0.45.2",
+    "kysely": "^0.28.0",
+    "mongodb": "^6.0.0 || ^7.0.0",
+    "mysql2": "^3.0.0",
+    "pg": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@prisma/client": {
+      "optional": true
+    },
+    "better-sqlite3": {
+      "optional": true
+    },
+    "drizzle-orm": {
+      "optional": true
+    },
+    "kysely": {
+      "optional": true
+    },
+    "mongodb": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
+  }
+}
