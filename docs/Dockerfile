@@ -12,8 +12,7 @@ COPY docs/package.json ./docs/
 COPY packages/better-activity/package.json ./packages/better-activity/
 COPY packages/react/package.json ./packages/react/
 
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile --filter=docs... --ignore-scripts
+RUN pnpm install --frozen-lockfile --filter=docs... --ignore-scripts
 
 # ---- Build ----
 FROM base AS builder
