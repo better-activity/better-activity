@@ -1,0 +1,120 @@
+---
+title: CLI
+description: Generate and apply the activity-table schema for your configured adapter.
+icon: Terminal
+---
+
+`better-activity` ships a small CLI with three commands: `schema`,
+`generate`, and `migrate`. All three load your activity instance from a
+config file and dispatch to the adapter that instance was built with.
+
+```bash
+pnpm better-activity <command> [options]
+```
+
+## The config file
+
+Each CLI command needs to find your `BetterActivity` instance. The
+default lookup path is one of:
+
+- `better-activity.config.ts`
+- `better-activity.config.mts`
+- `better-activity.config.mjs`
+- `better-activity.config.js`
+
+…in the current working directory. Pass `--config <path>` to override.
+
+The config file must export the instance as `default` (or as `activity`
+/ `betterActivity`):
+
+```ts title="better-activity.config.ts"
+import { betterActivity } from "better-activity";
+import { postgresAdapter } from "better-activity/adapters/postgres";
+import { Pool } from "pg";
+
+export default betterActivity({
+  database: postgresAdapter({ pool: new Pool() }),
+  entities: { /* ... */ },
+});
+```
+
+## `schema`
+
+Print the schema SQL to stdout. Doesn't write or execute anything.
+Useful for piping into your migration tool of choice.
+
+```bash
+pnpm better-activity schema --config ./better-activity.config.ts
+```
+
+Options:
+
+| Flag        | Notes                                              |
+| ----------- | -------------------------------------------------- |
+| `--config`  | Path to the config file.                           |
+| `--dialect` | `postgres` / `mysql` / `sqlite` (when ambiguous).  |
+
+## `generate`
+
+Write the migration to disk.
+
+```bash
+pnpm better-activity generate \
+  --config ./better-activity.config.ts \
+  --out ./migrations/0001_activity.sql
+```
+
+Options:
+
+| Flag       | Notes                                                          |
+| ---------- | -------------------------------------------------------------- |
+| `--config` | Path to the config file.                                       |
+| `--out`    | Output file. Defaults to the adapter's suggested path.         |
+| `--yes`    | Overwrite an existing file without prompting.                  |
+
+If the target file already exists, `generate` exits with a warning
+unless `--yes` is passed.
+
+## `migrate`
+
+Apply the schema directly to the configured database. Supported for the
+SQL adapters that ship with their own pool (`postgres`, `mysql`,
+`sqlite`). For Drizzle / Prisma / MongoDB / Kysely, use `generate` and
+hand the output to your normal migration tooling.
+
+```bash
+pnpm better-activity migrate --config ./better-activity.config.ts
+```
+
+The command splits the SQL on `;` boundaries and runs each statement
+through the adapter's pool. The DDL the CLI emits has no embedded
+semicolons, so the naive split is safe.
+
+## `help`
+
+Prints the usage block:
+
+```bash
+pnpm better-activity help
+```
+
+## Running the CLI without `pnpm`
+
+The package exposes the binary as `better-activity`, so any of the
+following work after installation:
+
+```bash
+pnpm better-activity ...
+npx better-activity ...
+node ./node_modules/.bin/better-activity ...
+```
+
+In a monorepo, add a script to your package:
+
+```json title="package.json"
+{
+  "scripts": {
+    "activity:generate": "better-activity generate"
+  }
+}
+```

@@ -1,0 +1,171 @@
+---
+title: Entities & Type Safety
+description: Declare entities once, get type-safe save/list/paginate everywhere.
+icon: ShieldCheck
+---
+
+The single most important thing you do with `better-activity` is declare
+your **entities**. An entity is anything in your system that can be acted
+on — `user`, `project`, `invoice`, `team` — and each entity has a fixed
+list of **actions** that can be logged against it.
+
+That registry drives the entire type-safety story.
+
+## Defining entities
+
+Entities are declared inline on `betterActivity({ entities })`:
+
+```ts
+const activity = betterActivity({
+  database,
+  entities: {
+    user: {
+      actions: ["created", "updated", "deleted", "logged_in", "logged_out"],
+      metadata: {} as { ip?: string; userAgent?: string },
+    },
+    project: {
+      actions: ["created", "archived", "restored", "member_added"],
+    },
+  },
+});
+```
+
+`actions` is preserved as a literal tuple (no `as const` needed) because
+of how `betterActivity()` is generic-typed. That literal tuple is what
+makes `save({ entity: "user", action: "..." })` autocomplete and reject
+typos.
+
+## Per-entity metadata types
+
+The `metadata` field is a **type-only brand**. The runtime value is
+ignored — you cast an empty object to the shape you want metadata to have
+for this entity:
+
+```ts
+entities: {
+  user: {
+    actions: ["logged_in"],
+    metadata: {} as { ip: string; userAgent: string },
+  },
+}
+```
+
+Now `save({ entity: "user", ... })` requires `metadata` of that shape, and
+the returned record's `metadata` is correctly narrowed:
+
+```ts
+const event = await activity.save({
+  entity: "user",
+  entityId: "u1",
+  action: "logged_in",
+  metadata: { ip: "1.2.3.4", userAgent: "Firefox" },
+});
+
+event.metadata.ip; // string | undefined — typed
+```
+
+Without a `metadata` brand, the field falls back to
+`Record<string, unknown>` for that entity.
+
+## `defineEntity` helper
+
+If you want to build entities outside the `betterActivity()` call —
+because you split them across files or share them between packages — use
+`defineEntity`:
+
+```ts
+import { defineEntity } from "better-activity";
+
+const user = defineEntity({
+  actions: ["logged_in", "logged_out"],
+  metadata: {} as { ip: string },
+});
+
+const project = defineEntity({
+  actions: ["created", "archived"],
+});
+
+export const activity = betterActivity({
+  database,
+  entities: { user, project },
+});
+```
+
+`defineEntity` preserves the literal tuple of `actions` so callers don't
+need `as const`.
+
+## What gets type-checked
+
+Every method on `activity` reads from the entities map.
+
+```ts
+// ✅ valid
+await activity.save({ entity: "user", entityId: "u1", action: "logged_in" });
+
+// ✗ TS error — "archived" is not declared for "user"
+await activity.save({ entity: "user", entityId: "u1", action: "archived" });
+
+// ✗ TS error — "ghost" is not in entities
+await activity.save({ entity: "ghost", entityId: "x", action: "created" });
+
+// ✗ TS error — "metadata.banana" is not on user metadata
+await activity.save({
+  entity: "user",
+  entityId: "u1",
+  action: "logged_in",
+  metadata: { banana: 1 },
+});
+```
+
+The same constraint applies to `list`, `paginate`, `between`, and `count`
+— the `entity` and `action` filters are typed.
+
+## Runtime strictness
+
+In addition to compile-time safety, `better-activity` runs a runtime
+check by default. If `entities` is provided and a `save()` call uses an
+unknown entity or action, it throws.
+
+```ts
+// throws UnknownActionError at runtime if strict=true (default)
+await (activity.save as any)({
+  entity: "user",
+  entityId: "u1",
+  action: "fly_to_mars",
+});
+```
+
+You can opt out — useful if you're persisting raw events from an
+external system you can't change:
+
+```ts
+const activity = betterActivity({
+  database,
+  entities: { user: { actions: ["logged_in"] } },
+  strict: false,
+});
+```
+
+With `strict: false`, unknown entities and actions are persisted as-is.
+
+## Inferring types out of the instance
+
+The `activity` instance exposes a `$Infer` type-only namespace for
+re-using the inferred record / input shapes elsewhere in your code:
+
+```ts
+type Event = typeof activity.$Infer.Record;
+type Input = typeof activity.$Infer.SaveInput;
+
+function render(event: Event) {
+  // event.entity / event.action are typed as the unions of all entities/actions
+}
+```
+
+## When not to declare entities
+
+You can call `betterActivity({ database })` without an `entities` map at
+all. In that mode, `entity` and `action` accept any string and there is no
+runtime validation. This is fine for prototyping but you give up the
+main reason to use the library — once you have a few event types, declare
+them.

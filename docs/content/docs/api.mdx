@@ -1,0 +1,221 @@
+---
+title: API Reference
+description: Every method on the activity instance.
+icon: Code
+---
+
+The `betterActivity()` call returns an instance with the methods below.
+All methods are async and fully typed against your `entities` map.
+
+## `save`
+
+Persist a single event.
+
+```ts
+await activity.save({
+  entity: "user",
+  entityId: "usr_123",
+  action: "logged_in",
+  actorId: "usr_123",
+  metadata: { ip: "1.2.3.4" },
+});
+```
+
+### Input
+
+| Field        | Type                       | Required | Notes                                                            |
+| ------------ | -------------------------- | -------- | ---------------------------------------------------------------- |
+| `entity`     | declared entity name       | yes      | Type-checked against `entities`.                                 |
+| `entityId`   | `string`                   | yes      | ID of the thing being acted on.                                  |
+| `action`     | declared action            | yes      | Must be in `entities[entity].actions`.                           |
+| `actorId`    | `string \| null`           | no       | Who performed the action.                                        |
+| `actorType`  | `string \| null`           | no       | Free-form actor classifier (e.g. `"user"`, `"system"`).          |
+| `metadata`   | per-entity metadata        | no       | Typed by `entities[entity].metadata`.                            |
+| `ip`         | `string \| null`           | no       | Request IP.                                                      |
+| `userAgent`  | `string \| null`           | no       | Request user agent.                                              |
+| `requestId`  | `string \| null`           | no       | Trace correlation id.                                            |
+| `id`         | `string`                   | no       | Override the auto-generated id.                                  |
+| `createdAt`  | `Date`                     | no       | Override the auto-generated timestamp.                           |
+
+Returns the persisted `ActivityRecord`.
+
+## `saveMany`
+
+Bulk-insert events in a single round-trip. Accepts an array of the same
+inputs as `save`. All `beforeSave` hooks fire in parallel before the
+batch is committed.
+
+```ts
+await activity.saveMany([
+  { entity: "user", entityId: "u1", action: "logged_in" },
+  { entity: "user", entityId: "u2", action: "logged_in" },
+]);
+```
+
+## `list`
+
+Filter + offset pagination. The default `limit` is `100` and the default
+sort order is descending by `createdAt`.
+
+```ts
+const events = await activity.list({
+  entity: "project",
+  entityId: "prj_456",
+  after: "2026-01-01",
+  before: new Date(),
+  limit: 50,
+  offset: 0,
+  sortBy: "desc",
+});
+```
+
+| Field      | Type                  | Default  | Notes                                  |
+| ---------- | --------------------- | -------- | -------------------------------------- |
+| `entity`   | entity name           | —        |                                        |
+| `entityId` | `string`              | —        |                                        |
+| `action`   | declared action       | —        | Filtered by `action`.                  |
+| `actorId`  | `string`              | —        |                                        |
+| `after`    | `Date \| ISO string`  | —        | Inclusive lower bound on `createdAt`.  |
+| `before`   | `Date \| ISO string`  | —        | Exclusive upper bound on `createdAt`.  |
+| `limit`    | `number`              | `100`    |                                        |
+| `offset`   | `number`              | `0`      |                                        |
+| `sortBy`   | `"asc" \| "desc"`     | `"desc"` |                                        |
+
+Use `list` for ad-hoc queries and for the first page of a feed. For
+deep scrolling, prefer `paginate`.
+
+## `paginate`
+
+Cursor-based pagination. The cursor is opaque and stable under
+concurrent inserts — `paginate` won't yield the same row twice even if
+new rows arrive between pages.
+
+```ts
+let cursor: string | undefined;
+do {
+  const page = await activity.paginate({
+    entity: "user",
+    cursor,
+    limit: 100,
+  });
+  for (const event of page.items) handle(event);
+  cursor = page.nextCursor ?? undefined;
+} while (cursor);
+```
+
+### Input
+
+Same filter fields as `list` (minus `offset`), plus:
+
+| Field    | Type     | Notes                                                          |
+| -------- | -------- | -------------------------------------------------------------- |
+| `cursor` | `string` | Opaque cursor from a previous `paginate` call's `nextCursor`.  |
+
+### Return value
+
+```ts
+{
+  items: ActivityRecord[];
+  nextCursor: string | null;  // null when there's no more data
+  hasMore: boolean;
+}
+```
+
+## `byActor`
+
+Convenience wrapper for "all events authored by an actor". Sorted by
+`createdAt` descending.
+
+```ts
+const events = await activity.byActor({
+  actorId: "usr_123",
+  limit: 100,
+});
+```
+
+## `between`
+
+Inclusive `from`, exclusive `to`. Returns events sorted by `createdAt`
+ascending, intended for chronological exports / reports.
+
+```ts
+const today = await activity.between({
+  entity: "project",
+  from: "2026-05-14T00:00:00Z",
+  to:   "2026-05-15T00:00:00Z",
+  limit: 1000,
+});
+```
+
+## `count`
+
+Same filters as `list`, returns a single integer.
+
+```ts
+const total = await activity.count({ entity: "user", action: "logged_in" });
+```
+
+## `purge`
+
+Hard-delete events matching a filter. **At least one filter is
+required** — the SDK refuses to wipe the whole table. Audit logs are
+usually append-only; use this only for retention windows or test
+fixtures.
+
+```ts
+await activity.purge({
+  entity: "user",
+  before: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
+});
+```
+
+Returns the number of rows deleted.
+
+## `subscribe`
+
+Register an in-process listener that fires after every successful
+`save()`. Returns an unsubscribe function.
+
+```ts
+const off = activity.subscribe(async (event) => {
+  await sendToWebhook(event);
+});
+
+off(); // detach
+```
+
+Subscriber errors are caught and logged (when `debugLogs: true`) so a
+single bad listener can't break `save()`.
+
+See [Hooks & Subscribers](/docs/hooks) for the full hook model.
+
+## `use`
+
+Append a `beforeSave` hook at runtime. Returns a removal function.
+
+```ts
+const off = activity.use(async (ctx) => {
+  if (ctx.input.entity === "user" && !ctx.input.actorId) {
+    ctx.abort = { reason: "user events require an actorId" };
+  }
+});
+```
+
+## `adapter`
+
+The raw `DBAdapter` instance. Escape hatch — useful for adapter-specific
+behavior the SDK doesn't expose.
+
+## `options`
+
+The fully-resolved options object (after defaults like `tableName` and
+`strict` are applied). Read-only.
+
+## `$Infer`
+
+Type-only namespace exposing inferred record / input shapes:
+
+```ts
+type Event = typeof activity.$Infer.Record;
+type Input = typeof activity.$Infer.SaveInput;
+```

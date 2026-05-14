@@ -1,0 +1,102 @@
+---
+title: Introduction
+description: A fully-typed activity and audit log library for TypeScript.
+icon: BookOpen
+---
+
+`better-activity` is a framework-agnostic, multi-database activity / audit
+log library for TypeScript. You declare your entities and the actions they
+support once, and the SDK gives you a type-safe `save()` / `list()` /
+`paginate()` API on top of the database you already use.
+
+It's modeled on the architecture of
+[`better-auth`](https://github.com/better-auth/better-auth): a small core,
+adapters for every popular database, and zero magic between you and the
+data.
+
+## Why better-activity?
+
+Audit logs almost always start as a one-off table glued together with a
+custom `save_event(...)` helper. As soon as you have more than a couple of
+event types, that helper starts collecting bugs: typos in action names,
+missing fields, inconsistent metadata shapes, and queries that scan the
+whole table.
+
+`better-activity` solves that with three ideas:
+
+- **A declared entity registry.** Every entity gets a fixed set of allowed
+  actions and an optional metadata type. Misuses are caught at compile time.
+- **One core, many backends.** Postgres, MySQL, SQLite, MongoDB, Drizzle,
+  Prisma, Kysely, and an in-memory adapter for tests — all behind the same
+  API.
+- **Boring, indexed schema.** The `activity` table is intentionally narrow
+  and ships with the indexes you actually need.
+
+## Features
+
+<Cards>
+  <Card title="Type-safe per entity" href="/docs/entities">
+    Per-entity action and metadata constraints, checked at compile time.
+  </Card>
+  <Card title="Eight adapters" href="/docs/adapters">
+    Postgres, MySQL, SQLite, MongoDB, Drizzle, Prisma, Kysely, memory.
+  </Card>
+  <Card title="Cursor pagination" href="/docs/api#paginate">
+    Stable cursors that don't drift under concurrent inserts.
+  </Card>
+  <Card title="Hooks & subscribers" href="/docs/hooks">
+    `beforeSave` / `afterSave` and in-process subscribers.
+  </Card>
+  <Card title="PII redaction" href="/docs/redaction">
+    Scrub fields by dot-path before they hit the database.
+  </Card>
+  <Card title="CLI" href="/docs/cli">
+    Generate or apply the schema for the configured adapter.
+  </Card>
+</Cards>
+
+## A 30-second taste
+
+```ts title="activity.ts"
+import { betterActivity } from "better-activity";
+import { postgresAdapter } from "better-activity/adapters/postgres";
+import { Pool } from "pg";
+
+export const activity = betterActivity({
+  database: postgresAdapter({ pool: new Pool() }),
+  entities: {
+    user: {
+      actions: ["created", "updated", "logged_in", "logged_out"],
+      metadata: {} as { ip?: string; userAgent?: string },
+    },
+    project: {
+      actions: ["created", "archived", "member_added"],
+    },
+  },
+});
+
+await activity.save({
+  entity: "user",
+  entityId: "usr_123",
+  action: "logged_in",
+  actorId: "usr_123",
+  metadata: { ip: "1.2.3.4" },
+});
+
+const events = await activity.list({
+  entity: "project",
+  entityId: "prj_456",
+  limit: 50,
+});
+```
+
+## Next steps
+
+<Cards>
+  <Card title="Get started" href="/docs/getting-started">
+    Install the package, pick an adapter, and log your first event.
+  </Card>
+  <Card title="Schema reference" href="/docs/schema">
+    The exact columns, types, and indexes of the `activity` table.
+  </Card>
+</Cards>

@@ -1,0 +1,92 @@
+---
+title: PII Redaction
+description: Scrub sensitive fields before they hit the database.
+icon: ShieldOff
+---
+
+Activity logs accumulate PII fast — IP addresses, request bodies,
+authentication metadata — and there are usually a handful of fields
+that should never persist in cleartext. `better-activity` ships a
+built-in `redact` option that replaces those fields with `[redacted]`
+**before** the row is written.
+
+## Basic usage
+
+```ts
+const activity = betterActivity({
+  database,
+  entities,
+  redact: ["ip", "metadata.password", "metadata.token"],
+});
+
+await activity.save({
+  entity: "user",
+  entityId: "u1",
+  action: "logged_in",
+  ip: "1.2.3.4",
+  metadata: { password: "hunter2", token: "abc" },
+});
+
+// Stored as:
+// {
+//   ip: "[redacted]",
+//   metadata: { password: "[redacted]", token: "[redacted]" },
+// }
+```
+
+## Dot-paths
+
+Each entry in `redact` is a dot-path. Top-level fields and arbitrarily
+nested fields inside `metadata` are both supported.
+
+```ts
+redact: [
+  "userAgent",                  // top-level
+  "metadata.email",             // nested
+  "metadata.payment.cardNumber" // deeply nested
+],
+```
+
+A path that doesn't exist on a given event is silently ignored, so you
+can declare redactions once and have them apply across all entities.
+
+## The redacted value
+
+The replacement value is exported as a constant:
+
+```ts
+import { REDACTED_VALUE } from "better-activity";
+
+REDACTED_VALUE; // "[redacted]"
+```
+
+Use it on the read side to identify scrubbed fields.
+
+## When redaction runs
+
+Redaction is applied between hooks and the database write:
+
+```text
+beforeSave  →  applyRedaction  →  adapter.create  →  afterSave
+```
+
+That means:
+
+- `beforeSave` hooks see the **original** values (so you can still
+  validate them).
+- `afterSave` hooks, subscribers, and the value returned by `save()` see
+  the **redacted** record.
+
+## What it doesn't do
+
+`redact` is a write-time hygiene tool, not an encryption strategy.
+
+- It only operates on the fields you list. Anything you forget gets
+  written as-is.
+- It does not encrypt or tokenize. The value is overwritten with the
+  literal string `"[redacted]"`.
+- It is not retroactive. Existing rows in the database are untouched.
+
+For real encryption-at-rest, layer it on top — your database engine
+(Postgres `pgcrypto`, MongoDB CSFLE) or a `beforeSave` hook are the
+right places.

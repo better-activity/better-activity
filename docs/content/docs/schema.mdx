@@ -1,0 +1,210 @@
+---
+title: Schema Reference
+description: The exact columns, types, and indexes of the activity table.
+icon: Table
+---
+
+`better-activity` writes every event to a single, intentionally narrow
+table. This page documents that table — every column, its purpose, how
+each adapter maps it to a concrete database type, and the indexes that
+ship with it.
+
+The schema lives in one place in source —
+[`schema.ts`][src] — and every adapter, the CLI's DDL generator, and the
+in-memory test adapter consume it from there. There is no "secret" table
+behind it.
+
+[src]: https://github.com/better-activity/better-activity/blob/main/packages/better-activity/src/schema.ts
+
+## Table name
+
+The default table name is `activity`. Override it on `betterActivity()`:
+
+```ts
+betterActivity({
+  database,
+  entities,
+  tableName: "audit_events",
+});
+```
+
+Every column name documented below is unchanged regardless of the table
+name.
+
+## Columns
+
+| Column      | Logical type | Required | Nullable | Indexed | Description                                                                             |
+| ----------- | ------------ | -------- | -------- | ------- | --------------------------------------------------------------------------------------- |
+| `id`        | `string`     | yes      | no       | PK      | Sortable primary key. Defaults to `act_<ts36>_<rand8>`.                                 |
+| `entity`    | `string`     | yes      | no       | yes     | The entity name (e.g. `"user"`). Part of the composite index with `entityId`.           |
+| `entityId`  | `string`     | yes      | no       | yes\*   | ID of the thing being acted on. Part of the composite index.                            |
+| `action`    | `string`     | yes      | no       | yes     | The action name (e.g. `"logged_in"`).                                                   |
+| `actorId`   | `string`     | no       | yes      | yes     | The actor that performed the action.                                                    |
+| `actorType` | `string`     | no       | yes      | no      | Free-form classifier (e.g. `"user"`, `"system"`, `"webhook"`).                          |
+| `metadata`  | `json`       | no       | yes      | no      | Arbitrary structured data. Typed per entity via `entities[entity].metadata`.            |
+| `ip`        | `string`     | no       | yes      | no      | Request IP, if relevant.                                                                |
+| `userAgent` | `text`       | no       | yes      | no      | Request user agent.                                                                     |
+| `requestId` | `string`     | no       | yes      | no      | Trace correlation id.                                                                   |
+| `createdAt` | `date`       | yes      | no       | yes     | When the event happened. Defaults to `new Date()` at save time.                         |
+
+\* `entityId` itself isn't single-column indexed — it lives inside the
+composite `(entity, entityId)` index. Queries that filter only by
+`entityId` (without `entity`) will scan; in practice every `list` /
+`paginate` call from the SDK passes `entity` alongside `entityId`.
+
+## Indexes
+
+Three single-column indexes and one composite, all created with
+`IF NOT EXISTS`:
+
+| Index name                          | Columns                  | Used by                                            |
+| ----------------------------------- | ------------------------ | -------------------------------------------------- |
+| `<table>_entity_idx`                | `entity`                 | Listing all events for an entity.                  |
+| `<table>_action_idx`                | `action`                 | Filtering by action.                               |
+| `<table>_actorId_idx`               | `actorId`                | `byActor()`.                                       |
+| `<table>_createdAt_idx`             | `createdAt`              | Time ranges, default sort, cursor pagination.      |
+| `<table>_entity_entity_id_idx`      | `entity`, `entityId`     | The canonical "feed for entity X with id Y" query. |
+
+`<table>` is the resolved table name (default `activity`).
+
+## Dialect mappings
+
+Each logical type translates to a concrete column type per dialect.
+
+| Logical type | Postgres        | MySQL          | SQLite     |
+| ------------ | --------------- | -------------- | ---------- |
+| `string`     | `TEXT`          | `VARCHAR(255)` | `TEXT`     |
+| `text`       | `TEXT`          | `TEXT`         | `TEXT`     |
+| `number`     | `BIGINT`        | `BIGINT`       | `INTEGER`  |
+| `boolean`    | `BOOLEAN`       | `TINYINT(1)`   | `INTEGER`  |
+| `date`       | `TIMESTAMPTZ`   | `DATETIME(3)`  | `TEXT`\*   |
+| `json`       | `JSONB`         | `JSON`         | `TEXT`\*\* |
+
+\* SQLite has no native timestamp type, so `createdAt` is stored as an
+ISO-8601 string. The adapter converts it back to `Date` on read.
+
+\*\* SQLite has no native JSON type. `metadata` is stored as a
+`JSON.stringify`d string and parsed back to an object on read.
+
+## Sample DDL
+
+### Postgres
+
+```sql
+CREATE TABLE IF NOT EXISTS "activity" (
+  "id"        TEXT PRIMARY KEY,
+  "entity"    TEXT NOT NULL,
+  "entityId"  TEXT NOT NULL,
+  "action"    TEXT NOT NULL,
+  "actorId"   TEXT,
+  "actorType" TEXT,
+  "metadata"  JSONB,
+  "ip"        TEXT,
+  "userAgent" TEXT,
+  "requestId" TEXT,
+  "createdAt" TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS "activity_entity_idx"           ON "activity" ("entity");
+CREATE INDEX IF NOT EXISTS "activity_action_idx"           ON "activity" ("action");
+CREATE INDEX IF NOT EXISTS "activity_actorId_idx"          ON "activity" ("actorId");
+CREATE INDEX IF NOT EXISTS "activity_createdAt_idx"        ON "activity" ("createdAt");
+CREATE INDEX IF NOT EXISTS "activity_entity_entity_id_idx" ON "activity" ("entity", "entityId");
+```
+
+### MySQL
+
+```sql
+CREATE TABLE IF NOT EXISTS `activity` (
+  `id`        VARCHAR(255) PRIMARY KEY,
+  `entity`    VARCHAR(255) NOT NULL,
+  `entityId`  VARCHAR(255) NOT NULL,
+  `action`    VARCHAR(255) NOT NULL,
+  `actorId`   VARCHAR(255),
+  `actorType` VARCHAR(255),
+  `metadata`  JSON,
+  `ip`        VARCHAR(255),
+  `userAgent` TEXT,
+  `requestId` VARCHAR(255),
+  `createdAt` DATETIME(3) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS `activity_entity_idx`           ON `activity` (`entity`);
+CREATE INDEX IF NOT EXISTS `activity_action_idx`           ON `activity` (`action`);
+CREATE INDEX IF NOT EXISTS `activity_actorId_idx`          ON `activity` (`actorId`);
+CREATE INDEX IF NOT EXISTS `activity_createdAt_idx`        ON `activity` (`createdAt`);
+CREATE INDEX IF NOT EXISTS `activity_entity_entity_id_idx` ON `activity` (`entity`, `entityId`);
+```
+
+### SQLite
+
+```sql
+CREATE TABLE IF NOT EXISTS "activity" (
+  "id"        TEXT PRIMARY KEY,
+  "entity"    TEXT NOT NULL,
+  "entityId"  TEXT NOT NULL,
+  "action"    TEXT NOT NULL,
+  "actorId"   TEXT,
+  "actorType" TEXT,
+  "metadata"  TEXT,
+  "ip"        TEXT,
+  "userAgent" TEXT,
+  "requestId" TEXT,
+  "createdAt" TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS "activity_entity_idx"           ON "activity" ("entity");
+CREATE INDEX IF NOT EXISTS "activity_action_idx"           ON "activity" ("action");
+CREATE INDEX IF NOT EXISTS "activity_actorId_idx"          ON "activity" ("actorId");
+CREATE INDEX IF NOT EXISTS "activity_createdAt_idx"        ON "activity" ("createdAt");
+CREATE INDEX IF NOT EXISTS "activity_entity_entity_id_idx" ON "activity" ("entity", "entityId");
+```
+
+Generate the DDL for your adapter with:
+
+```bash
+pnpm better-activity schema --config ./better-activity.config.ts
+```
+
+## ID format
+
+The default `id` is generated by the SDK as:
+
+```
+act_<ts36>_<rand8>
+```
+
+- `ts36` — `Date.now()` in base-36, monotonically increasing.
+- `rand8` — 8 random base-36 chars for collision avoidance.
+
+That gives you a sortable, URL-safe ID that's cheap to generate without
+a database round-trip. Override the generator with the `generateId`
+option on `betterActivity()` if you'd rather use ULIDs, UUIDs, or
+Snowflake IDs.
+
+## MongoDB
+
+The MongoDB adapter uses the `activity` collection (or the name you
+pass to `tableName`). Every column above maps to a top-level field on
+the document and indexes are created at adapter init.
+
+`createdAt` is stored as a native BSON `Date`. `metadata` is stored as a
+nested document; standard MongoDB query operators work against it.
+
+## Drizzle / Prisma / Kysely
+
+These adapters don't generate DDL — they delegate to your existing ORM's
+migration tooling. The columns and indexes you need are the same ones
+documented above; replicate them in your `schema.prisma`, Drizzle
+schema, or Kysely migration file. The CLI's `generate` command will
+print the SQL flavor for your provider that you can use as a template.
+
+## Customizing the schema
+
+The library doesn't support customizing the column set. The narrow,
+fixed shape is part of the design — it's what lets every adapter share
+the same code paths.
+
+If you need extra fields, put them in `metadata`. Per-entity metadata
+types ([Entities & Type Safety](/docs/entities)) keep that ergonomic and
+type-safe.

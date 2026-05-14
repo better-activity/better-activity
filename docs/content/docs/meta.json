@@ -1,0 +1,14 @@
+{
+  "title": "Better Activity",
+  "pages": [
+    "index",
+    "getting-started",
+    "entities",
+    "api",
+    "adapters",
+    "schema",
+    "hooks",
+    "redaction",
+    "cli"
+  ]
+}

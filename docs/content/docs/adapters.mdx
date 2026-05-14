@@ -1,0 +1,196 @@
+---
+title: Adapters
+description: Plug better-activity into Postgres, MySQL, SQLite, MongoDB, Drizzle, Prisma, Kysely, or your own store.
+icon: Database
+---
+
+`better-activity` ships eight first-class adapters. The core SDK never
+touches a database directly — it talks to a `DBAdapter`, and adapters
+live behind subpath imports so adapter-specific peer dependencies aren't
+pulled in unless you use them.
+
+## Available adapters
+
+| Subpath                              | Backend                                    |
+| ------------------------------------ | ------------------------------------------ |
+| `better-activity/adapters/memory`    | In-memory store (testing).                 |
+| `better-activity/adapters/postgres`  | `pg` driver (Postgres).                    |
+| `better-activity/adapters/mysql`     | `mysql2` driver.                           |
+| `better-activity/adapters/sqlite`    | `better-sqlite3`.                          |
+| `better-activity/adapters/mongodb`   | `mongodb` 6.x / 7.x.                       |
+| `better-activity/adapters/kysely`    | `kysely` query builder.                    |
+| `better-activity/adapters/drizzle`   | `drizzle-orm` (any drizzle dialect).       |
+| `better-activity/adapters/prisma`    | `@prisma/client`.                          |
+
+## Postgres
+
+```ts
+import { betterActivity } from "better-activity";
+import { postgresAdapter } from "better-activity/adapters/postgres";
+import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+export const activity = betterActivity({
+  database: postgresAdapter({ pool }),
+  entities: { /* ... */ },
+});
+```
+
+Maps `metadata` to `JSONB` and `createdAt` to `TIMESTAMPTZ`. The CLI's
+`generate` / `migrate` commands work out of the box.
+
+## MySQL
+
+```ts
+import { mysqlAdapter } from "better-activity/adapters/mysql";
+import { createPool } from "mysql2/promise";
+
+const pool = createPool({ uri: process.env.DATABASE_URL });
+
+export const activity = betterActivity({
+  database: mysqlAdapter({ pool }),
+  entities: { /* ... */ },
+});
+```
+
+Maps `metadata` to `JSON` and `createdAt` to `DATETIME(3)`.
+
+## SQLite
+
+```ts
+import { sqliteAdapter } from "better-activity/adapters/sqlite";
+import Database from "better-sqlite3";
+
+const db = new Database("./activity.db");
+
+export const activity = betterActivity({
+  database: sqliteAdapter({ db }),
+  entities: { /* ... */ },
+});
+```
+
+SQLite has no native JSON or timestamp types, so `metadata` is stored as
+TEXT (`JSON.stringify`d) and `createdAt` is stored as an ISO-8601 string.
+The adapter handles the conversion transparently on read.
+
+## MongoDB
+
+```ts
+import { mongodbAdapter } from "better-activity/adapters/mongodb";
+import { MongoClient } from "mongodb";
+
+const client = new MongoClient(process.env.MONGO_URL!);
+await client.connect();
+
+export const activity = betterActivity({
+  database: mongodbAdapter({
+    client,
+    databaseName: "myapp",
+  }),
+  entities: { /* ... */ },
+});
+```
+
+MongoDB uses the `activity` collection. Index creation happens at adapter
+init for the same fields the SQL adapters index.
+
+## Drizzle
+
+```ts
+import { drizzleAdapter } from "better-activity/adapters/drizzle";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+
+const db = drizzle(new Pool());
+
+export const activity = betterActivity({
+  database: drizzleAdapter({ db, provider: "postgres" }),
+  entities: { /* ... */ },
+});
+```
+
+Works with any Drizzle dialect. Pass `provider: "postgres" | "mysql" |
+"sqlite"` so the adapter knows which value translation to apply.
+
+## Prisma
+
+```ts
+import { prismaAdapter } from "better-activity/adapters/prisma";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+export const activity = betterActivity({
+  database: prismaAdapter({ prisma, provider: "postgresql" }),
+  entities: { /* ... */ },
+});
+```
+
+Add the `activity` model to your `schema.prisma` matching the
+[schema reference](/docs/schema), then `prisma migrate dev` as usual.
+
+## Kysely
+
+```ts
+import { kyselyAdapter } from "better-activity/adapters/kysely";
+import { Kysely, PostgresDialect } from "kysely";
+import { Pool } from "pg";
+
+const db = new Kysely({
+  dialect: new PostgresDialect({ pool: new Pool() }),
+});
+
+export const activity = betterActivity({
+  database: kyselyAdapter({ db, provider: "postgres" }),
+  entities: { /* ... */ },
+});
+```
+
+## In-memory
+
+For tests and dry-runs. No persistence, no setup.
+
+```ts
+import { memoryAdapter } from "better-activity/adapters/memory";
+
+const activity = betterActivity({
+  database: memoryAdapter({}),
+  entities: { user: { actions: ["logged_in"] } },
+});
+```
+
+The memory adapter implements the full `DBAdapter` surface — filtering,
+sorting, pagination — so you can swap it in for any test that doesn't
+need real database semantics.
+
+## Writing a custom adapter
+
+Adapters are just one function call. `createAdapterFactory` handles the
+boring parts: `Where` cleanup, ID generation, JSON / Date / boolean
+translation, and DDL generation.
+
+```ts
+import { createAdapterFactory } from "better-activity";
+
+export const myAdapter = (deps: MyDeps) =>
+  createAdapterFactory({
+    config: { adapterId: "my-store" },
+    adapter: ({ table }) => ({
+      async create({ data }) { /* ... */ },
+      async findOne({ where }) { /* ... */ },
+      async findMany({ where, limit, offset, sortBy }) { /* ... */ },
+      async count({ where }) { /* ... */ },
+      async update({ where, update }) { /* ... */ },
+      async updateMany({ where, update }) { /* ... */ },
+      async delete({ where }) { /* ... */ },
+      async deleteMany({ where }) { /* ... */ },
+    }),
+  });
+```
+
+The factory pre-cleans `Where[]` into `CleanedWhere[]` so your adapter
+only deals with normalized, typed filters. See [`adapter.ts`][src] for
+the full type surface.
+
+[src]: https://github.com/better-activity/better-activity/blob/main/packages/better-activity/src/adapter.ts

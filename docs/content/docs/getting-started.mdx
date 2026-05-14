@@ -1,0 +1,138 @@
+---
+title: Getting Started
+description: Install better-activity, pick an adapter, and log your first event.
+icon: Rocket
+---
+
+## Install
+
+Install the core package and the driver for the database you use.
+
+```bash title="pnpm"
+pnpm add better-activity
+```
+
+Add the driver that matches your adapter:
+
+```bash title="Pick one"
+pnpm add pg                 # Postgres
+pnpm add mysql2             # MySQL
+pnpm add better-sqlite3     # SQLite
+pnpm add mongodb            # MongoDB
+pnpm add kysely             # Kysely
+pnpm add drizzle-orm        # Drizzle
+pnpm add @prisma/client     # Prisma
+```
+
+For React apps, the optional React layer ships separately:
+
+```bash
+pnpm add @better-activity/react react
+```
+
+## Create the activity instance
+
+`betterActivity()` is the single entrypoint. It takes a database adapter
+and an `entities` map describing what you intend to log.
+
+```ts title="lib/activity.ts"
+import { betterActivity } from "better-activity";
+import { postgresAdapter } from "better-activity/adapters/postgres";
+import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+export const activity = betterActivity({
+  database: postgresAdapter({ pool }),
+  entities: {
+    user: {
+      actions: ["created", "updated", "deleted", "logged_in", "logged_out"],
+      metadata: {} as { ip?: string; userAgent?: string },
+    },
+    project: {
+      actions: ["created", "archived", "restored", "member_added"],
+    },
+  },
+});
+```
+
+The shape of `entities` drives TypeScript inference for every method on
+`activity`. Adding a new entity later is just adding another key.
+
+## Create the table
+
+The library doesn't run migrations behind your back. You generate the
+schema with the CLI and apply it through your normal workflow.
+
+```bash title="Generate the migration"
+pnpm better-activity generate --config ./better-activity.config.ts \
+  --out ./migrations/0001_activity.sql
+```
+
+Or apply it directly (Postgres / MySQL / SQLite only):
+
+```bash
+pnpm better-activity migrate --config ./better-activity.config.ts
+```
+
+See the [CLI guide](/docs/cli) for the full command reference and the
+[schema reference](/docs/schema) for the exact column layout.
+
+## Save your first event
+
+```ts
+await activity.save({
+  entity: "user",
+  entityId: "usr_123",
+  action: "logged_in",
+  actorId: "usr_123",
+  metadata: { ip: "1.2.3.4" },
+});
+```
+
+If you used a typo, you'll see it before you run the code:
+
+```ts
+// Type error: 'banana' is not assignable to '"created" | "updated" | ...'
+await activity.save({
+  entity: "user",
+  entityId: "usr_123",
+  action: "banana",
+});
+```
+
+## Query events
+
+```ts
+const recent = await activity.list({
+  entity: "project",
+  entityId: "prj_456",
+  limit: 50,
+});
+
+// Cursor pagination — stable under concurrent inserts
+let cursor: string | undefined;
+do {
+  const page = await activity.paginate({
+    entity: "user",
+    cursor,
+    limit: 100,
+  });
+  for (const event of page.items) handle(event);
+  cursor = page.nextCursor ?? undefined;
+} while (cursor);
+```
+
+## What's next
+
+<Cards>
+  <Card title="Define entities" href="/docs/entities">
+    The type-safety story and how to model your domain.
+  </Card>
+  <Card title="API reference" href="/docs/api">
+    Every method on the `activity` instance.
+  </Card>
+  <Card title="Adapters" href="/docs/adapters">
+    Pick the adapter that matches your stack.
+  </Card>
+</Cards>

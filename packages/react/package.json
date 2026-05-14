@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "React hooks and headless components for better-activity.",
   "license": "MIT",
+  "author": "Dan Zabrotski",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",

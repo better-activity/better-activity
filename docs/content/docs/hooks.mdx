@@ -1,0 +1,151 @@
+---
+title: Hooks & Subscribers
+description: Run code before or after every save, and fan events out to your own listeners.
+icon: Workflow
+---
+
+`better-activity` gives you two places to plug behavior into the write
+path:
+
+- **Hooks** — `beforeSave` and `afterSave` run inline with `save()` and
+  can cancel or enrich it.
+- **Subscribers** — fire after a successful save, run in parallel with
+  the request, and are isolated from each other.
+
+## `beforeSave`
+
+Runs before the event is persisted. Useful for validation, enrichment,
+and authorization checks. Throwing — or setting `ctx.abort` —
+cancels the save.
+
+```ts
+const activity = betterActivity({
+  database,
+  entities: {
+    /* ... */
+  },
+  beforeSave: async (ctx) => {
+    if (ctx.input.entity === "user" && !ctx.input.actorId) {
+      ctx.abort = { reason: "user events require an actorId" };
+    }
+  },
+});
+```
+
+`ctx` contains:
+
+| Field     | Type                 | Notes                                              |
+| --------- | -------------------- | -------------------------------------------------- |
+| `input`   | `SaveInput<E>`       | Mutate to enrich (e.g. add a `requestId`).         |
+| `abort`   | `{ reason: string }` | Set to cancel the save; throws `HookAbortedError`. |
+| `options` | resolved options     | The full instance config.                          |
+
+You can pass an array of hooks; they run sequentially.
+
+```ts
+beforeSave: [validate, enrichRequestId, audit],
+```
+
+Or attach one at runtime with `activity.use()`:
+
+```ts
+const off = activity.use(async (ctx) => {
+  ctx.input.requestId ??= traceId();
+});
+```
+
+## `afterSave`
+
+Runs after the database accepts the row. The persisted record (with the
+final `id`, `createdAt`, and any redacted fields) is in `ctx.record`.
+
+```ts
+const activity = betterActivity({
+  database,
+  entities: {
+    /* ... */
+  },
+  afterSave: async (ctx) => {
+    await analytics.track(ctx.record);
+  },
+});
+```
+
+Errors thrown from `afterSave` propagate to the caller of `save()`. If
+you want fire-and-forget behavior that can't fail the request, use
+`subscribe` instead.
+
+## `subscribe`
+
+Subscribers are in-process listeners attached at runtime. They run after
+hooks, errors from one subscriber don't affect others, and they don't
+fail the parent `save()` call.
+
+```ts
+const off = activity.subscribe(async (event) => {
+  await sendToWebhook(event);
+});
+
+off(); // detach when you're done
+```
+
+Use subscribers for:
+
+- Webhooks
+- Pushing to a message queue
+- Live UIs (e.g. a SSE stream that fans out the event to connected
+  clients)
+- Cache invalidation
+
+When `debugLogs: true`, subscriber errors are logged to the console.
+Otherwise they're swallowed.
+
+## Hook execution order
+
+```text
+save(input)
+  ├─ validate(input)            // entity/action whitelist (strict mode)
+  ├─ beforeSave[0..n](ctx)      // sequential; can abort
+  ├─ adapter.create(row)        // database write
+  ├─ afterSave[0..n](ctx)       // sequential; errors bubble
+  └─ subscribers(...)           // sequential per subscriber; errors swallowed
+```
+
+## Patterns
+
+### Add a request id from async context
+
+```ts
+import { AsyncLocalStorage } from "node:async_hooks";
+
+const requestCtx = new AsyncLocalStorage<{ requestId: string }>();
+
+const activity = betterActivity({
+  database,
+  entities,
+  beforeSave: (ctx) => {
+    ctx.input.requestId ??= requestCtx.getStore()?.requestId ?? null;
+  },
+});
+```
+
+### Block deletes from non-admin actors
+
+```ts
+beforeSave: (ctx) => {
+  if (ctx.input.action === "deleted" && !ctx.input.metadata?.adminId) {
+    ctx.abort = { reason: "deletes require admin metadata" };
+  }
+},
+```
+
+### Mirror events to another system
+
+```ts
+activity.subscribe(async (event) => {
+  await fetch(process.env.WEBHOOK_URL!, {
+    method: "POST",
+    body: JSON.stringify(event),
+  });
+});
+```

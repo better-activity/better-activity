@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "A fully-typed activity / audit log library for TypeScript.",
   "license": "MIT",
+  "author": "Dan Zabrotski",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
