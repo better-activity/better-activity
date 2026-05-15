@@ -9,8 +9,8 @@ WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY docs/package.json ./docs/
-COPY packages/better-activity/package.json ./packages/better-activity/
-COPY packages/react/package.json ./packages/react/
+# COPY packages/better-activity/package.json ./packages/better-activity/
+# COPY packages/react/package.json ./packages/react/
 
 RUN pnpm install --frozen-lockfile --filter=docs... --ignore-scripts
 
